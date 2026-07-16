@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const path = require("path");
+const dns = require("dns");
 const express = require("express");
 
 const logger = require("./utils/logger");
@@ -10,6 +10,12 @@ const scheduler = require("./scheduler/scheduler");
 
 const routes = require("./routes");
 const webhookRoutes = require("./routes/webhookRoutes");
+
+dns.setServers([
+    "10.92.24.210",
+    "8.8.8.8",
+    "1.1.1.1",
+]);
 
 const app = express();
 
@@ -22,7 +28,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 /**
- * API Routes
+ * Routes
  */
 app.use("/api", routes);
 app.use("/webhooks", webhookRoutes);
@@ -41,27 +47,6 @@ app.get("/api/health", (req, res) => {
         timestamp: new Date(),
 
     });
-
-});
-
-/**
- * Serve Angular Production Build
- */
-const angularDistPath = path.join(
-    __dirname,
-    "dist/browser"
-);
-
-app.use(express.static(angularDistPath));
-
-app.get("/{*any}", (req, res) => {
-
-    res.sendFile(
-        path.join(
-            angularDistPath,
-            "index.html"
-        )
-    );
 
 });
 
