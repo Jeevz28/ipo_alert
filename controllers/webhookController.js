@@ -43,7 +43,8 @@ const verify = (req, res) => {
 const receive = async (req, res) => {
 
     try {
-        console.log(JSON.stringify(req));
+        const payload = JSON.stringify(req.body, null, 2);
+        console.log(payload);
         const entries = req.body?.entry ?? [];
 
         if (entries.length === 0) {
