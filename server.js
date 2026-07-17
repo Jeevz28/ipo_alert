@@ -49,7 +49,7 @@ app.get("/api/health", (req, res) => {
  */
 const angularDistPath = path.join(
     __dirname,
-    "dist/browser"
+    "dist/app/browser"
 );
 
 app.use(express.static(angularDistPath));
@@ -59,7 +59,7 @@ app.get("/{*any}", (req, res) => {
     res.sendFile(
         path.join(
             angularDistPath,
-            "index.html"
+            "index.csr.html"
         )
     );
 
