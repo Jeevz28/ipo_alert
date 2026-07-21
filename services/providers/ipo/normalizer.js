@@ -51,6 +51,7 @@ const mapStatus = (status) => {
             return "UPCOMING";
 
         case "O":
+        case "CT":    
             return "OPEN";
 
         case "C":

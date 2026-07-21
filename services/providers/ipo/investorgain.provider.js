@@ -21,7 +21,7 @@ const fetchIPOs = async () => {
   for (const ipo of data.ipoList) {
     let latestSubscription = null;
 
-    if (["O", "C", "LP", "LN"].includes(ipo.ipo_status_short)) {
+    if (["O", "CT", "C", "LP", "LN"].includes(ipo.ipo_status_short)) {
       try {
         logger.info(
           {
