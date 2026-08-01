@@ -13,7 +13,7 @@ const register = async ({ name, whatsapp, password }) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
+    console.log(hashedPassword);
     const user = await User.create({
         name,
         whatsapp,

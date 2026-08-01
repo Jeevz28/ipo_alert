@@ -145,7 +145,7 @@ const processStatus = async (statusData) => {
                     $set: update,
                 },
                 {
-                    new: true,
+                    returnDocument: "after",
                 }
             );
 
