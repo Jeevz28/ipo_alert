@@ -1,4 +1,5 @@
 const dateTime = require("../../../utils/dateTime");
+const logger = require("../../../utils/logger");
 
 const parseDate = (dateString) => {
 
@@ -18,14 +19,25 @@ const parseIssueSize = (issueSize) => {
         return null;
     }
 
-    return Number(
+    // Ignore values expressed in shares instead of ₹
+    if (/shares/i.test(issueSize)) {
+        return null;
+    }
+
+    const value = Number(
         issueSize
             .replace(/&#8377;/g, "")
             .replace(/₹/g, "")
+            .replace(/Crore/gi, "")
             .replace(/Cr/gi, "")
             .replace(/,/g, "")
+            .replace(/\*/g, "")
             .trim()
     );
+
+    return Number.isFinite(value)
+        ? value
+        : null;
 
 };
 
