@@ -19,6 +19,17 @@ const fetchIPOs = async () => {
   const result = [];
 
   for (const ipo of data.ipoList) {
+
+    if (ipo.id === 2119) {
+
+        logger.warn(
+            {
+                ipo,
+            },
+            "[InvestorGain] Problem IPO Raw Data"
+        );
+
+    }
     let latestSubscription = null;
 
     if (["O", "CT", "C", "LP", "LN"].includes(ipo.ipo_status_short)) {

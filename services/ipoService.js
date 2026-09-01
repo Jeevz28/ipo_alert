@@ -8,6 +8,7 @@ const { toIPODTO, toIPOListDTO } = require("../dto/ipo.dto");
  * Internal use only
  */
 const createIPO = async (ipoData) => {
+
   const existingIPO = await IPO.findOne({
     providerId: ipoData.providerId,
   });
@@ -26,23 +27,96 @@ const createIPO = async (ipoData) => {
  * Used by Scheduler
  */
 const upsertIPO = async (ipoData) => {
-  const ipo = await IPO.findOneAndUpdate(
-    {
-      providerId: ipoData.providerId,
-    },
-    {
-      $set: {
-        ...ipoData,
-        lastUpdatedAt: dateTime.now().toDate(),
+
+  const existingIPO = await IPO.findOne({
+    providerId: ipoData.providerId,
+  });
+
+  /**
+   * Existing IPO
+   *
+   * Preserve existing required fields when the provider
+   * sends null/empty values.
+   */
+  if (existingIPO) {
+
+    const updateData = {
+      ...ipoData,
+      lastUpdatedAt: dateTime.now().toDate(),
+    };
+
+    /**
+     * Do not overwrite valid existing dates with null.
+     */
+    if (!ipoData.openDate) {
+      delete updateData.openDate;
+    }
+
+    if (!ipoData.closeDate) {
+      delete updateData.closeDate;
+    }
+
+    /**
+     * Do not overwrite issueSize with invalid/null data.
+     */
+    if (
+      ipoData.issueSize === null ||
+      ipoData.issueSize === undefined ||
+      !Number.isFinite(ipoData.issueSize)
+    ) {
+      delete updateData.issueSize;
+    }
+
+    const ipo = await IPO.findOneAndUpdate(
+      {
+        providerId: ipoData.providerId,
       },
-    },
-    {
-      returnDocument: "after",
-      upsert: true,
-      runValidators: true,
-      setDefaultsOnInsert: true,
-    },
-  );
+      {
+        $set: updateData,
+      },
+      {
+        returnDocument: "after",
+        runValidators: true,
+      },
+    );
+
+    return toIPODTO(ipo);
+  }
+
+  /**
+   * New IPO
+   *
+   * MongoDB requires openDate and closeDate.
+   * Do not create an incomplete IPO.
+   *
+   * The scheduler will log and skip this IPO,
+   * allowing the remaining IPOs to continue.
+   */
+  if (!ipoData.openDate || !ipoData.closeDate) {
+
+    throw new Error(
+      `Cannot create IPO "${ipoData.companyName}" because openDate or closeDate is missing.`,
+    );
+
+  }
+
+  /**
+   * Prevent invalid issueSize values such as NaN.
+   */
+  const createData = {
+    ...ipoData,
+    lastUpdatedAt: dateTime.now().toDate(),
+  };
+
+  if (
+    createData.issueSize === null ||
+    createData.issueSize === undefined ||
+    !Number.isFinite(createData.issueSize)
+  ) {
+    delete createData.issueSize;
+  }
+
+  const ipo = await IPO.create(createData);
 
   return toIPODTO(ipo);
 };
@@ -51,6 +125,7 @@ const upsertIPO = async (ipoData) => {
  * Get All IPOs
  */
 const getAllIPOs = async () => {
+
   const ipos = await IPO.find().sort({
     openDate: -1,
   });
@@ -62,6 +137,7 @@ const getAllIPOs = async () => {
  * Get Open IPOs
  */
 const getOpenIPOs = async () => {
+
   const ipos = await IPO.find({
     status: "OPEN",
   }).sort({
@@ -75,6 +151,7 @@ const getOpenIPOs = async () => {
  * Get IPO By Mongo Id
  */
 const getIPOById = async (ipoId) => {
+
   const ipo = await IPO.findById(ipoId);
 
   if (!ipo) {
@@ -89,6 +166,7 @@ const getIPOById = async (ipoId) => {
  * Used by Scheduler
  */
 const getIPOByProviderId = async (providerId) => {
+
   const ipo = await IPO.findOne({
     providerId,
   });
@@ -105,11 +183,13 @@ const getIPOByProviderId = async (providerId) => {
  * Internal/Admin only
  */
 const deleteIPO = async (ipoId) => {
+
   const ipo = await IPO.findByIdAndDelete(ipoId);
 
   if (!ipo) {
     throw new Error("IPO not found.");
   }
+
 };
 
 module.exports = {

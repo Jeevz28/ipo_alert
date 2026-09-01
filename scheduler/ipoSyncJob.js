@@ -49,22 +49,109 @@ const run = async () => {
         const normalizedIPOs =
             normalizeIPOs(rawIPOs);
 
+        let synced = 0;
+        let failed = 0;
+
         for (const ipo of normalizedIPOs) {
 
-            const savedIPO =
-                await ipoService.upsertIPO(ipo);
+            try {
 
-            logger.info(
-                {
-                    ipo: savedIPO.companyName,
-                    providerId: savedIPO.providerId,
-                    status: savedIPO.status,
-                },
-                "[IPO] Synced"
-            );
+                /**
+                 * Special handling for incomplete UPCOMING IPOs.
+                 *
+                 * InvestorGain can return an upcoming IPO before
+                 * its opening/closing dates are available.
+                 *
+                 * Since UPCOMING IPOs cannot trigger subscription
+                 * alerts yet, safely skip persistence for this run.
+                 */
+                if (
+                    ipo.status === "UPCOMING" &&
+                    (!ipo.openDate || !ipo.closeDate)
+                ) {
 
-            if (savedIPO.status === "OPEN") {
-                await alertEngine.processIPO(savedIPO);
+                    logger.warn(
+                        {
+                            providerId: ipo.providerId,
+                            companyName: ipo.companyName,
+                            status: ipo.status,
+                            openDate: ipo.openDate,
+                            closeDate: ipo.closeDate,
+                        },
+                        "[IPO] Upcoming IPO Missing Dates - Skipping"
+                    );
+
+                    failed++;
+
+                    continue;
+
+                }
+
+                const savedIPO =
+                    await ipoService.upsertIPO(ipo);
+
+                synced++;
+
+                logger.info(
+                    {
+                        ipo: savedIPO.companyName,
+                        providerId: savedIPO.providerId,
+                        status: savedIPO.status,
+                    },
+                    "[IPO] Synced"
+                );
+
+                /**
+                 * Only OPEN IPOs are evaluated for alerts.
+                 *
+                 * CT is normalized to OPEN by the provider normalizer.
+                 */
+                if (savedIPO.status === "OPEN") {
+
+                    try {
+
+                        await alertEngine.processIPO(
+                            savedIPO
+                        );
+
+                    } catch (err) {
+
+                        logger.error(
+                            {
+                                err,
+                                providerId: savedIPO.providerId,
+                                companyName: savedIPO.companyName,
+                            },
+                            "[Alert Engine] Processing Failed"
+                        );
+
+                    }
+
+                }
+
+            } catch (err) {
+
+                failed++;
+
+                logger.error(
+                    {
+                        err,
+                        providerId: ipo.providerId,
+                        companyName: ipo.companyName,
+                        status: ipo.status,
+                        openDate: ipo.openDate,
+                        closeDate: ipo.closeDate,
+                    },
+                    "[IPO] Sync Failed - Skipping IPO"
+                );
+
+                /**
+                 * Important:
+                 *
+                 * Never allow one bad IPO to stop the scheduler.
+                 */
+                continue;
+
             }
 
         }
@@ -72,6 +159,8 @@ const run = async () => {
         logger.info(
             {
                 total: normalizedIPOs.length,
+                synced,
+                failed,
                 duration: `${Date.now() - startedAt} ms`,
             },
             "[Scheduler] IPO Sync Completed"
