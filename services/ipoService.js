@@ -133,6 +133,80 @@ const getAllIPOs = async () => {
   return toIPOListDTO(ipos);
 };
 
+
+/**
+ * Get IPOs Currently Within Subscription Window
+ *
+ * Used by Scheduler to refresh subscription data
+ * even when the IPO is no longer returned by the
+ * InvestorGain IPO list endpoint.
+ */
+const getActiveIPOs = async () => {
+
+  const today = dateTime.now().format("YYYY-MM-DD");
+
+  const ipos = await IPO.find({
+    openDate: {
+      $lte: today,
+    },
+    closeDate: {
+      $gte: today,
+    },
+  }).sort({
+    closeDate: 1,
+  });
+
+  return ipos;
+};
+
+
+/**
+ * Update IPO Subscription
+ *
+ * Used by Scheduler when refreshing an existing
+ * active IPO directly from the provider.
+ */
+const updateSubscription = async (
+  ipoId,
+  subscription,
+) => {
+
+  if (!subscription) {
+    return null;
+  }
+
+  const ipo =
+    await IPO.findByIdAndUpdate(
+      ipoId,
+      {
+        $set: {
+            status: "OPEN",
+
+            "subscriptions.overall": Number(subscription.total) || 0,
+            "subscriptions.retail": Number(subscription.rii) || 0,
+            "subscriptions.qib": Number(subscription.qib) || 0,
+            "subscriptions.nii": Number(subscription.nii) || 0,
+            "subscriptions.bnii": Number(subscription.nii_big) || 0,
+            "subscriptions.snii": Number(subscription.nii_small) || 0,
+
+            lastUpdatedAt: dateTime.now().toDate(),
+        },
+    },
+      {
+        returnDocument: "after",
+        runValidators: true,
+      },
+    );
+
+  if (!ipo) {
+    throw new Error(
+      "IPO not found while updating subscription.",
+    );
+  }
+
+  return toIPODTO(ipo);
+};
+
 /**
  * Get Open IPOs
  */
@@ -192,11 +266,15 @@ const deleteIPO = async (ipoId) => {
 
 };
 
+
+
 module.exports = {
   createIPO,
   upsertIPO,
   getAllIPOs,
   getOpenIPOs,
+  getActiveIPOs,
+  updateSubscription,
   getIPOById,
   getIPOByProviderId,
   deleteIPO,

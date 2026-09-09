@@ -6,6 +6,8 @@ const toIPODTO = (ipo) => {
   return {
     id: ipo._id.toString(),
 
+    providerId: ipo.providerId,
+    
     companyName: ipo.companyName,
 
     symbol: ipo.symbol,

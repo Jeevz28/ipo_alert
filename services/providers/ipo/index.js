@@ -73,6 +73,74 @@ const fetchIPOs = async () => {
 
 };
 
+
+const fetchSubscription = async (providerId, companyName = null) => {
+
+    const providers = [
+        investorGainProvider,
+        // chittorgarhProvider,
+        // nseProvider,
+    ];
+
+    for (const provider of providers) {
+
+        try {
+
+            logger.info(
+                {
+                    provider: provider.name,
+                    providerId,
+                    companyName,
+                },
+                "[Provider] Fetching Subscription"
+            );
+
+            if (typeof provider.fetchSubscription !== "function") {
+
+                logger.warn(
+                    {
+                        provider: provider.name,
+                    },
+                    "[Provider] Subscription Method Not Available"
+                );
+
+                continue;
+
+            }
+
+            const subscription =
+                await provider.fetchSubscription(
+                    providerId,
+                    companyName
+                );
+
+            if (subscription) {
+
+                return subscription;
+
+            }
+
+        } catch (err) {
+
+            logger.error(
+                {
+                    provider: provider.name,
+                    providerId,
+                    companyName,
+                    err,
+                },
+                "[Provider] Subscription Fetch Failed"
+            );
+
+        }
+
+    }
+
+    return null;
+
+};
+
 module.exports = {
     fetchIPOs,
+    fetchSubscription,
 };

@@ -56,14 +56,12 @@ const parseNumber = (value) => {
 };
 
 const mapStatus = (status) => {
-
     switch (status) {
-
         case "U":
             return "UPCOMING";
 
         case "O":
-        case "CT":    
+        case "CT":
             return "OPEN";
 
         case "C":
@@ -75,9 +73,7 @@ const mapStatus = (status) => {
 
         default:
             return "UPCOMING";
-
     }
-
 };
 
 const normalizeIPO = (rawIPO) => {

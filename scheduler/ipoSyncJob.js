@@ -33,25 +33,27 @@ const run = async () => {
             "[Provider] IPOs Fetched"
         );
 
-        if (rawIPOs.length === 0) {
-
-            logger.info(
-                {
-                    duration: `${Date.now() - startedAt} ms`,
-                },
-                "[Scheduler] No IPOs Found"
-            );
-
-            return;
-
-        }
-
         const normalizedIPOs =
             normalizeIPOs(rawIPOs);
 
         let synced = 0;
         let failed = 0;
 
+        /**
+         * Keep track of IPOs that were already processed
+         * through the InvestorGain IPO list.
+         *
+         * These IPOs do not need to be processed again
+         * during the active IPO refresh stage below.
+         */
+        const syncedProviderIds = new Set();
+
+        /**
+         * --------------------------------------------------
+         * STEP 1
+         * Sync IPOs returned by InvestorGain IPO List
+         * --------------------------------------------------
+         */
         for (const ipo of normalizedIPOs) {
 
             try {
@@ -61,9 +63,6 @@ const run = async () => {
                  *
                  * InvestorGain can return an upcoming IPO before
                  * its opening/closing dates are available.
-                 *
-                 * Since UPCOMING IPOs cannot trigger subscription
-                 * alerts yet, safely skip persistence for this run.
                  */
                 if (
                     ipo.status === "UPCOMING" &&
@@ -84,13 +83,16 @@ const run = async () => {
                     failed++;
 
                     continue;
-
                 }
 
                 const savedIPO =
                     await ipoService.upsertIPO(ipo);
 
                 synced++;
+
+                syncedProviderIds.add(
+                    savedIPO.providerId
+                );
 
                 logger.info(
                     {
@@ -102,9 +104,7 @@ const run = async () => {
                 );
 
                 /**
-                 * Only OPEN IPOs are evaluated for alerts.
-                 *
-                 * CT is normalized to OPEN by the provider normalizer.
+                 * CT is already normalized to OPEN.
                  */
                 if (savedIPO.status === "OPEN") {
 
@@ -145,20 +145,176 @@ const run = async () => {
                     "[IPO] Sync Failed - Skipping IPO"
                 );
 
-                /**
-                 * Important:
-                 *
-                 * Never allow one bad IPO to stop the scheduler.
-                 */
                 continue;
+            }
+        }
 
+        /**
+         * --------------------------------------------------
+         * STEP 2
+         * Refresh active IPOs already stored in MongoDB
+         *
+         * This is independent of InvestorGain's IPO list.
+         *
+         * An IPO can disappear from ipoList-read/IPO while
+         * its subscription data is still available through
+         * ipo-subscription-read/{providerId}.
+         * --------------------------------------------------
+         */
+        let activeIPOs = [];
+
+        try {
+
+            activeIPOs =
+                await ipoService.getActiveIPOs();
+
+            logger.info(
+                {
+                    total: activeIPOs.length,
+                },
+                "[Scheduler] Active IPOs Found"
+            );
+
+        } catch (err) {
+
+            logger.error(
+                {
+                    err,
+                },
+                "[Scheduler] Failed To Find Active IPOs"
+            );
+
+            activeIPOs = [];
+
+        }
+
+        /**
+         * Process active IPOs that were NOT already handled
+         * by the InvestorGain IPO list above.
+         */
+        for (const ipo of activeIPOs) {
+
+            /**
+             * Already processed during Step 1.
+             */
+            if (
+                syncedProviderIds.has(
+                    ipo.providerId
+                )
+            ) {
+                continue;
             }
 
+            try {
+
+                logger.info(
+                    {
+                        providerId: ipo.providerId,
+                        companyName: ipo.companyName,
+                        openDate: ipo.openDate,
+                        closeDate: ipo.closeDate,
+                    },
+                    "[Scheduler] Refreshing Active IPO"
+                );
+
+                /**
+                 * Fetch latest subscription directly using
+                 * the provider ID stored in MongoDB.
+                 */
+                const latestSubscription =
+                    await ipoProvider.fetchSubscription(
+                        ipo.providerId,
+                        ipo.companyName
+                    );
+
+                if (!latestSubscription) {
+
+                    logger.warn(
+                        {
+                            providerId: ipo.providerId,
+                            companyName: ipo.companyName,
+                        },
+                        "[Scheduler] Active IPO Subscription Missing"
+                    );
+
+                    continue;
+                }
+
+                /**
+                 * Update ONLY subscription values.
+                 *
+                 * Do not overwrite IPO metadata.
+                 */
+                const updatedIPO =
+                    await ipoService.updateSubscription(
+                        ipo._id,
+                        latestSubscription
+                    );
+
+                logger.info(
+                    {
+                        providerId: updatedIPO.providerId,
+                        companyName: updatedIPO.companyName,
+                        overall:
+                            updatedIPO.subscriptions.overall,
+                        retail:
+                            updatedIPO.subscriptions.retail,
+                        qib:
+                            updatedIPO.subscriptions.qib,
+                        nii:
+                            updatedIPO.subscriptions.nii,
+                    },
+                    "[Scheduler] Active IPO Subscription Updated"
+                );
+
+                /**
+                 * Evaluate alerts using the freshly updated
+                 * subscription values.
+                 */
+                try {
+
+                    await alertEngine.processIPO(
+                        updatedIPO
+                    );
+
+                } catch (err) {
+
+                    logger.error(
+                        {
+                            err,
+                            providerId: updatedIPO.providerId,
+                            companyName: updatedIPO.companyName,
+                        },
+                        "[Alert Engine] Active IPO Processing Failed"
+                    );
+
+                }
+
+            } catch (err) {
+
+                failed++;
+
+                logger.error(
+                    {
+                        err,
+                        providerId: ipo.providerId,
+                        companyName: ipo.companyName,
+                    },
+                    "[Scheduler] Active IPO Refresh Failed"
+                );
+
+                /**
+                 * Never allow one active IPO to stop
+                 * monitoring of other IPOs.
+                 */
+                continue;
+            }
         }
 
         logger.info(
             {
                 total: normalizedIPOs.length,
+                activeIPOs: activeIPOs.length,
                 synced,
                 failed,
                 duration: `${Date.now() - startedAt} ms`,
